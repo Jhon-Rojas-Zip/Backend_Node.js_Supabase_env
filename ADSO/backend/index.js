@@ -8,6 +8,7 @@ dotenv.config();
 //Crear App de Express
 const app = express();
 
+// 🔥 Conexión (solo log, como tú quieres usarlo)
 conectarDB();
 
 //Leer formato JSON
@@ -46,7 +47,7 @@ app.get('/presentacion', (req, res) => {
 });
 
 //============================================
-// RUTA PARA TRAER INFO DEL SERVER - USUARIOS
+// RUTA PARA TRAER INFO DEL SERVER - USUARIOS - GET
 //============================================
 app.get("/usuarios", async (req, res) => {
     const { data, error } = await supabase
@@ -69,7 +70,7 @@ app.get("/usuarios", async (req, res) => {
 });
 
 //============================================
-// RUTA PARA ENVIAR INFO AL SERVER - USUARIOS
+// RUTA PARA ENVIAR INFO AL SERVER - USUARIOS - POST
 //============================================
 app.post("/crear_usuario", async (req, res) => {
     const { nombre, apellido, telefono, correo, rol } = req.body;
@@ -102,7 +103,7 @@ app.post("/crear_usuario", async (req, res) => {
 });
 
 //================================================
-//RUTA PARA ACTUALIZAR INFO DEL SERVER - USUARIOS
+//RUTA PARA ACTUALIZAR INFO DEL SERVER - USUARIOS - PUT
 //================================================
 app.put("/actualizar_usuario/:id", async (req, res) => {
 
@@ -158,7 +159,7 @@ app.put("/actualizar_usuario/:id", async (req, res) => {
 });
 
 //==============================================
-//RUTA PARA ELIMINAR INFO DEL SERVER - USUARIOS
+//RUTA PARA ELIMINAR INFO DEL SERVER - USUARIOS - DELETE
 //==============================================
 app.delete("/eliminar_usuario/:id", async (req, res) => {
 
@@ -251,7 +252,7 @@ app.post("/api/pedidos", async (req, res) => {
 });
 
 //°°°°°°°°°°°°°°°°°°°°°°°°°
-// RUTA PARA BUSCAR PEDIDOS
+// RUTA PARA BUSCAR PEDIDOS - GET
 //°°°°°°°°°°°°°°°°°°°°°°°°°
 app.get("/api/pedidos/:usuario_id", async (req, res) => {
 
@@ -307,7 +308,7 @@ app.get("/api/pedidos/:usuario_id", async (req, res) => {
 });
 
 //°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°
-// RUTA PARA ACTUALIZAR PEDIDOS
+// RUTA PARA ACTUALIZAR PEDIDOS - PUT
 //°°°°°°°°°°°°°°°°°°°°°°°°°°°°°°
 app.put("/api/pedidos/:id", async (req, res) => {
 
@@ -376,7 +377,7 @@ app.put("/api/pedidos/:id", async (req, res) => {
 });
 
 //°°°°°°°°°°°°°°°°°°°°°°°°°°°°
-// RUTA PARA ELIMINAR PEDIDOS
+// RUTA PARA ELIMINAR PEDIDOS - DELETE
 //°°°°°°°°°°°°°°°°°°°°°°°°°°°°
 app.delete("/api/pedidos/:id", async (req, res) => {
 
@@ -422,6 +423,208 @@ app.delete("/api/pedidos/:id", async (req, res) => {
     });
 });
 
+//||||||||||||||||||||||
+// CREAR FACTURA - POST
+//||||||||||||||||||||||
+app.post("/api/facturas", async (req, res) => {
+
+    console.log("🧾 CREANDO FACTURA:", req.body);
+
+    const { usuario_id, pedido_id, subtotal, impuesto } = req.body;
+
+    // VALIDACIONES
+    if (!usuario_id || !pedido_id || !subtotal) {
+        return res.status(400).json({
+            error: "❌ FALTAN DATOS OBLIGATORIOS"
+        });
+    }
+
+    if (isNaN(usuario_id) || isNaN(pedido_id) || isNaN(subtotal)) {
+        return res.status(400).json({
+            error: "❌ DATOS NUMÉRICOS INVÁLIDOS"
+        });
+    }
+
+    const impuestoFinal = impuesto ? Number(impuesto) : 0;
+    const total = Number(subtotal) + impuestoFinal;
+
+    try {
+        // 🔢 Generar número de factura automático
+        const { count } = await supabase
+            .from("facturas")
+            .select("*", { count: "exact", head: true });
+
+        const numero_factura = `FAC-${String((count || 0) + 1).padStart(4, "0")}`;
+
+        // INSERTAR
+        const { data, error } = await supabase
+            .from("facturas")
+            .insert([{
+                numero_factura,
+                usuario_id,
+                pedido_id,
+                subtotal,
+                impuesto: impuestoFinal,
+                total, 
+                estado: "pendiente"
+            }])
+            .select();
+
+        if (error) {
+            console.error("❌ ERROR:", error);
+            return res.status(400).json({
+                error: "❌ NO SE PUDO CREAR LA FACTURA",
+                detalle: error.message
+            });
+        }
+
+        console.log("✅ FACTURA CREADA:", data);
+
+        res.status(201).json({
+            mensaje: "✅ FACTURA CREADA",
+            factura: data
+        });
+
+    } catch (err) {
+        res.status(500).json({ error: "❌ ERROR DEL SERVIDOR" });
+    }
+});
+
+//||||||||||||||||||||||||||||||
+// OBTENER FACTURA POR ID - GET
+//||||||||||||||||||||||||||||||
+app.get("/api/facturas/:id", async (req, res) => {
+
+    const { id } = req.params;
+
+    if (!id || isNaN(id)) {
+        return res.status(400).json({
+            error: "❌ ID INVÁLIDO"
+        });
+    }
+
+    const { data, error } = await supabase
+        .from("facturas")
+        .select(`
+            id,
+            numero_factura,
+            subtotal,
+            impuesto,
+            total,
+            estado,
+            metodo_pago,
+            fecha_factura,
+            usuarios (
+                nombre,
+                correo
+            ),
+            pedidos (
+                descripcion,
+                cantidad
+            )
+        `)
+        .eq("id", id)
+        .single();
+
+    if (error) {
+        return res.status(404).json({
+            error: "❌ FACTURA NO ENCONTRADA"
+        });
+    }
+
+    res.status(200).json(data);
+});
+
+//||||||||||||||||||||||||||||
+// FACTURAS POR USUARIO - GET
+//||||||||||||||||||||||||||||
+app.get("/api/usuarios/:usuario_id/facturas", async (req, res) => {
+
+    const { usuario_id } = req.params;
+
+    if (!usuario_id || isNaN(usuario_id)) {
+        return res.status(400).json({
+            error: "❌ usuario_id inválido"
+        });
+    }
+
+    const { data, error } = await supabase
+        .from("facturas")
+        .select(`
+            id,
+            numero_factura,
+            total,
+            estado,
+            fecha_factura,
+            pedidos (
+                descripcion,
+                cantidad
+            )
+        `)
+        .eq("usuario_id", usuario_id)
+        .order("fecha_factura", { ascending: false });
+
+    if (error) {
+        return res.status(500).json({
+            error: "❌ ERROR AL CONSULTAR FACTURAS"
+        });
+    }
+
+    res.status(200).json({
+        total: data.length,
+        facturas: data
+    });
+});
+
+//||||||||||||||||||||||||||
+// ACTUALIZAR FACTURA - PUT
+//||||||||||||||||||||||||||
+app.put("/api/facturas/:id", async (req, res) => {
+
+    const { id } = req.params;
+    const { estado, metodo_pago } = req.body;
+
+    if (!id || isNaN(id)) {
+        return res.status(400).json({
+            error: "❌ ID inválido"
+        });
+    }
+
+    if (!estado) {
+        return res.status(400).json({
+            error: "❌ DEBES ENVIAR EL ESTADO"
+        });
+    }
+
+    const datosActualizar = { estado };
+
+    if (metodo_pago) {
+        datosActualizar.metodo_pago = metodo_pago;
+    }
+
+    const { data, error } = await supabase
+        .from("facturas")
+        .update(datosActualizar)
+        .eq("id", id)
+        .select();
+
+    if (error) {
+        return res.status(500).json({
+            error: "❌ NO SE PUDO ACTUALIZAR"
+        });
+    }
+
+    if (!data || data.length === 0) {
+        return res.status(404).json({
+            error: "❌ FACTURA NO ENCONTRADA"
+        });
+    }
+
+    res.status(200).json({
+        mensaje: "✅ FACTURA ACTUALIZADA",
+        factura: data
+    });
+});
 
 //Definir puerto del servidor
 const PORT = 3000;
